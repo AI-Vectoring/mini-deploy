@@ -43,6 +43,25 @@ use_project_key() {
     exit 0
 }
 
+TRICYCLER_CONFIG="${HOME}/.config/tricycler/config"
+GITHUB_KEY=""
+
+# ── Check cached GitHub key ───────────────────────────────────────────────────
+if [ -f "${TRICYCLER_CONFIG}" ]; then
+    CACHED_KEY=$(grep "^GITHUB_KEY=" "${TRICYCLER_CONFIG}" | cut -d= -f2-)
+    if [ -f "${CACHED_KEY}" ]; then
+        echo "Testing cached GitHub key: ${CACHED_KEY}"
+        if test_github_key "${CACHED_KEY}"; then
+            GITHUB_KEY="${CACHED_KEY}"
+            echo "Cached key valid."
+        else
+            echo "Cached key no longer valid. Running key detection..."
+        fi
+    fi
+fi
+
+if [ -z "${GITHUB_KEY}" ]; then
+
 FOUND_KEYS=()
 for f in "${HOME}/.ssh"/*; do
     [[ "$f" == *.pub ]] && continue
@@ -50,13 +69,12 @@ for f in "${HOME}/.ssh"/*; do
     [[ "$f" == */config* ]] && continue
     [[ "$f" == */authorized_keys* ]] && continue
     [[ "$f" == */${PROJECT} ]] && continue
-        [[ "$f" == *.pem ]] && continue
+    [[ "$f" == *.pem ]] && continue
     if [ -f "$f" ] && head -1 "$f" 2>/dev/null | grep -q "PRIVATE KEY"; then
         FOUND_KEYS+=("$f")
     fi
 done
 
-GITHUB_KEY=""
 ATTEMPTS=0
 MAX_ATTEMPTS=3
 
@@ -121,6 +139,16 @@ done
 if [ -z "${GITHUB_KEY}" ]; then
     use_project_key
 fi
+
+# ── Cache the validated GitHub key ───────────────────────────────────────────
+mkdir -p "$(dirname "${TRICYCLER_CONFIG}")"
+if grep -q "^GITHUB_KEY=" "${TRICYCLER_CONFIG}" 2>/dev/null; then
+    sed -i "s|^GITHUB_KEY=.*|GITHUB_KEY=${GITHUB_KEY}|" "${TRICYCLER_CONFIG}"
+else
+    echo "GITHUB_KEY=${GITHUB_KEY}" >> "${TRICYCLER_CONFIG}"
+fi
+
+fi # end key detection block
 
 # ── Build image ──────────────────────────────────────────────────────────────
 echo "Building image..."
